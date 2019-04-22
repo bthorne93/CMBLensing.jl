@@ -196,3 +196,11 @@ basetype(::Type{T}) where {T} = T.name.wrapper
 # amazing Julia doesn't have this yet...
 eachcol(A) = @views [A[:,i] for i=1:size(A,2)]
 eachrow(A) = @views [A[i,:] for i=1:size(A,1)]
+
+
+function padarray(arr, dims...; padding=0)
+    parr  = similar(arr, dims...)
+    parr .= padding
+    parr[map(Base.OneTo,size(arr))...] .= arr
+    parr
+end

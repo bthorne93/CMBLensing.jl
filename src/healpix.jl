@@ -95,8 +95,6 @@ end
 struct HpxPix{Nside} <: Pix end
 abstract type HealpixCap{Nside,T,Nobs,B,S,P<:HpxPix} <: Field{B,S,P} end
 
-
-## Spin-0
 struct HealpixS0Cap{Nside, T, Nobs, GC<:Union{Nothing,GradientCache{Nside,T,Nobs}}} <: HealpixCap{Nside, T, Nobs, Map, S0, HpxPix{Nside}}
     Ix::Vector{T}
     gradient_cache::GC
@@ -114,6 +112,27 @@ end
 
 getproperty(f::HealpixS2Cap, ::Val{:Qx}) = f.QUx[:,1]
 getproperty(f::HealpixS2Cap, ::Val{:Ux}) = f.QUx[:,2]
+getproperty(f::HealpixS2Cap, ::Val{:E}) = alm2map!(HealpixS0Cap(similar(@view(f.QUx[:,1])), f.gradient_cache),map2alm(f)[1:1,:,:])
+getproperty(f::HealpixS2Cap, ::Val{:B}) = alm2map!(HealpixS0Cap(similar(@view(f.QUx[:,2])), f.gradient_cache),map2alm(f)[2:2,:,:])
+
+
+function isfullsky(f::HealpixCap{Nside,T,Nobs}) where {Nside,T,Nobs}
+    npix = size(first(fieldvalues(f)),1)
+    if (npix == 12Nside^2)
+        return true
+    elseif (npix == Nobs)
+        return false
+    else
+        error("invalid number of pixels")
+    end
+end
+
+tocap(f::H) where {Nside,T,Nobs,H<:HealpixS0Cap{Nside,T,Nobs}} = H(f.Ix[1:Nobs], f.gradient_cache)
+tocap(f::H) where {Nside,T,Nobs,H<:HealpixS2Cap{Nside,T,Nobs}} = H(f.QUx[1:Nobs,:], f.gradient_cache)
+tofullsky(f::H) where {Nside,T,Nobs,H<:HealpixS0Cap{Nside,T,Nobs}} = H(padarray(f.Ix, 12Nside^2),   f.gradient_cache)
+tofullsky(f::H) where {Nside,T,Nobs,H<:HealpixS2Cap{Nside,T,Nobs}} = H(padarray(f.QUx,12Nside^2,2), f.gradient_cache)
+
+
 
 # convertable_fields is screwed up for HealpixCap so say by hand here there's
 # none (todo: fix this)
@@ -121,6 +140,7 @@ convertable_fields(::Type{F}) where {B,S,P<:HpxPix,F<:Field{B,S,P}} = []
 
 similar(f::F) where {F<:HealpixCap} = F(similar(first(fieldvalues(f))), f.gradient_cache)
 copy(f::F)    where {F<:HealpixCap} = F(copy(first(fieldvalues(f))),    f.gradient_cache)
+
 
 
 ## derivatives
@@ -143,19 +163,19 @@ function mul!(∇f::FieldVector{F}, ∇Op::∇Op, f::F) where {Nside,T,Nobs,F<:H
         Ix = @view f.Ix[gc.neighbors[i]]
         ∇f[1].Ix[i], ∇f[2].Ix[i] = W[i] * Ix 
     end
+    ∇f[1].Ix[Nobs+1:end] .= ∇f[2].Ix[Nobs+1:end] .= 0 # pixels outside of the gradient cache region
     ∇f
 end
-function mul!(∇f::FieldVector, ∇Op::Union{∇Op,Adjoint{∇i,∇Op}}, f::HealpixS2Cap)
+function mul!(∇f::FieldVector, ∇Op::∇Op, f::F) where {Nside,T,Nobs,F<:HealpixS2Cap{Nside,T,Nobs}}
     gc = f.gradient_cache
-    W = get_W(∇op, gc)
+    W = get_W(∇Op, gc)
     @inbounds for i in eachindex(gc.neighbors)
         Qx = @view f.QUx[gc.neighbors[i],1]
         Ux = @view f.QUx[gc.neighbors[i],2]
-        ∇f[1].Qx[i,1], ∇f[2].Qx[i,1] = W[i] * Qx
-        ∇f[1].Ux[i,2], ∇f[2].Ux[i,2] = W[i] * Ux
+        ∇f[1].QUx[i,1], ∇f[2].QUx[i,1] = W[i] * Qx
+        ∇f[1].QUx[i,2], ∇f[2].QUx[i,2] = W[i] * Ux
     end
-    imax = gc.neighbors[end][1] + 1
-    ∇f[1].Qx[imax:end] .= ∇f[2].Qx[imax:end] .= ∇f[1].Ux[imax:end] .= ∇f[2].Ux[imax:end] .= NaN
+    ∇f[1].QUx[Nobs+1:end,:] .= ∇f[2].QUx[Nobs+1:end,:] .= 0 # pixels outside of the gradient cache region
     ∇f
 end
 *(∇Op::Union{∇Op,Adjoint{∇i,<:∇Op}}, f::HealpixCap) where {B} =  mul!(allocate_result(∇Op,f),∇Op,f)
@@ -170,7 +190,7 @@ function mul!(f′::F, ∇Op::Adjoint{∇i,<:∇Op}, v::FieldVector{F}, memf′:
         f′.Ix[i] = -(  (W[i] * @view v[1].Ix[gc.neighbors[i]])[1] 
                      + (W[i] * @view v[2].Ix[gc.neighbors[i]])[2])
     end
-    f′.Ix[Nobs+1:end] .= NaN
+    f′.Ix[Nobs+1:end] .= 0
     f′
 end
 
@@ -228,7 +248,7 @@ end
 azeqproj(f::HealpixCap{Nside,T,Nobs}) where {Nside,T,Nobs} = azeqproj(f, round(600rad2deg(hp.nside2resol(Nside)))/10, Nside)
 
 ## broadcasting
-broadcast_data(::Type{F}, f::F) where {F<:HealpixS0Cap} = (f.Ix,)
+broadcast_data(::Type{<:HealpixCap}, f::F) where {F<:HealpixS0Cap} = (f.Ix,)
 broadcast_data(::Type{F}, f::F) where {F<:HealpixS2Cap} = (f.QUx,)
 metadata(::Type{F}, f::F) where {F<:HealpixCap} = (f.gradient_cache,)
 metadata_reduce((m1,)::Tuple{GC}, (m2,)::Tuple{GC}) where {GC<:Union{Nothing,GradientCache}} = (m1,)
@@ -269,18 +289,25 @@ function ldiv!(f′::F, L::IsotropicHarmonicCov{Nside, T, Nobs}, f::F) where {Ns
     alm2map!(f′, aℓms)
 end
 
-# one ring before the ring on which the first unobserved pixel is
-get_zbounds(Nside, Nobs) = [ringinfo(Nside).cosθ[hp.pix2ring(Nside,[Nobs])[1]], 1] 
+function get_zbounds(f::HealpixCap{Nside,T,Nobs}) where {Nside,T,Nobs}
+    if isfullsky(f)
+        [-1, 1]
+    else
+        [ringinfo(Nside).cosθ[hp.pix2ring(Nside,[Nobs])[1]], 1]
+    end
+end
 
 function map2alm(f::HealpixCap{Nside,T,Nobs}; ℓmax=2Nside) where {Nside,T,Nobs}
-    zbounds = get_zbounds(Nside, Nobs)
+    zbounds = get_zbounds(f)
     map2alm(first(fieldvalues(f)), Nside=Nside, ℓmax=ℓmax, zbounds=zbounds)
 end
 
 function alm2map!(f::HealpixCap{Nside,T,Nobs}, aℓms::Array{Complex{T},3}) where {Nside,T,Nobs}
-    zbounds = get_zbounds(Nside, Nobs)
+    zbounds = get_zbounds(f)
     alm2map!(first(fieldvalues(f)), aℓms, Nside=Nside, zbounds=zbounds)
-    first(fieldvalues(f))[Nobs+1:end,:] .= NaN
+    if !isfullsky(f)
+        first(fieldvalues(f))[Nobs+1:end,:] .= NaN 
+    end
     f
 end
 
@@ -292,10 +319,10 @@ end
 *(α::Real, Σ::IsotropicHarmonicCov) = IsotropicHarmonicCov(α*Σ.Cℓ, Σ.gc)
 inv(Σ::IsotropicHarmonicCov) = IsotropicHarmonicCov(nan2zero.(inv.(Σ.Cℓ)), Σ.gc)
 sqrt(Σ::IsotropicHarmonicCov) = IsotropicHarmonicCov(sqrt.(Σ.Cℓ), Σ.gc)
-simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1}) where {Nside,T,Nobs} = 
-    sqrt(Σ) * HealpixS0Cap(randn(T,Nobs)/T(hp.nside2resol(Nside)), Σ.gc)
-simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2}) where {Nside,T,Nobs} = 
-    sqrt(Σ) * HealpixS2Cap(randn(T,Nobs,2)/T(hp.nside2resol(Nside)), Σ.gc)
+simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1}; fullsky=true, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs} = 
+    sqrt(Σ) * HealpixS0Cap(randn(T,Nsim)/T(hp.nside2resol(Nside)), Σ.gc)
+simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2}; fullsky=true, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs} = 
+    sqrt(Σ) * HealpixS2Cap(randn(T,Nsim,2)/T(hp.nside2resol(Nside)), Σ.gc)
 zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs}) where {Nside,T,Nobs} = 
     HealpixS0Cap(zeros(T,Nobs), Σ.gc)
 
@@ -320,7 +347,7 @@ end
 # sure which...
 using Libdl
 @init try
-    Libdl.dlopen("libgomp",Libdl.RTLD_GLOBAL)
+    Libdl.dlopen("libgomp.so.1",Libdl.RTLD_GLOBAL)
 catch
     @warn "Failed to load libgomp. Healpix support may not work."
 end
@@ -333,12 +360,23 @@ end
     else
         error("maps should be Npix-×-1 or Npix-×-2")
     end
+    
+    
     fn_name = "__alm_tools_MOD_map2alm_$(N==1 ? "sc" : "spin")_$((T==Float32) ? "s" : "d")"
     quote
+        
+        # for spin-2, Fortran map2alm needs full 12Nside^2-×-2 map array even
+        # with zbounds
+        if N==2 && size(maps,1)!=12Nside^2
+            fullmaps = Array{T,N}(undef,12Nside^2,2)
+            fullmaps[1:size(maps,1),:] .= maps
+            maps = fullmaps
+        end
+        
         aℓms = Array{Complex{T}}(undef, ($N,ℓmax+1,mmax+1))
         aℓms .= NaN
         ccall(
-            ($fn_name, "libhealpix"), Nothing,
+            ($fn_name, "/home/marius/lib/libhealpix.so"), Nothing,
             (Ref{Int32}, Ref{Int32}, Ref{Int32}, $(Tspin...), Ref{T}, Ref{Complex{T}}, Ref{Float64}, Ref{Nothing}),
             Nside, ℓmax, mmax, $(spin...), maps, aℓms, Float64.(zbounds), C_NULL
         )
@@ -356,11 +394,25 @@ end
     end
     fn_name = "__alm_tools_MOD_alm2map_$(N==1 ? "sc_wrapper" : "spin")_$((T==Float32) ? "s" : "d")"
     quote
+        
+        # for spin-2, Fortran alm2map needs full 12Nside^2-×-2 map array even
+        # with zbounds
+        if N==2 && size(maps,1)!=12Nside^2
+            fullmaps = Array{T,N}(undef,12Nside^2,2)
+            fullmaps[1:size(maps,1),:] .= maps
+        else
+            fullmaps = maps
+        end
+        
         ccall(
-           ($fn_name, "libhealpix"), Nothing,
+           ($fn_name, "/home/marius/lib/libhealpix.so") , Nothing,
            (Ref{Int32}, Ref{Int32}, Ref{Int32}, $(Tspin...), Ref{Complex{T}}, Ref{T}, Ref{Float64}, Ref{Nothing}),
-           Nside, ℓmax, mmax, $(spin...), aℓms, maps, Float64.(zbounds), C_NULL
+           Nside, ℓmax, mmax, $(spin...), aℓms, fullmaps, Float64.(zbounds), C_NULL
         )
+        
+        if N==2 && size(maps,1)!=12Nside^2
+            maps .= fullmaps[1:size(maps,1),:]
+        end
         maps
     end
 end
@@ -369,9 +421,15 @@ function alm2cl(alm::Matrix{Complex{T}}; ℓmax=(size(alm,1)-1)) where {T}
     InterpolatedCℓs(0:ℓmax, [(abs2(alm[ℓ+1,1]) + 2sum(abs2.(alm[ℓ+1, 2:ℓ+1])))/(2ℓ+1) for ℓ=0:ℓmax])
 end
 
+function alm2cl(alm::Array{Complex{T},3}; ℓmax=(size(alm,2)-1)) where {T}
+    map(1:2) do i
+        InterpolatedCℓs(0:ℓmax, [(abs2(alm[i,ℓ+1,1]) + 2sum(abs2.(alm[i,ℓ+1,2:ℓ+1])))/(2ℓ+1) for ℓ=0:ℓmax])
+    end
+end
+
 function alm2cl(alm1::Matrix{Complex{T}}, alm2::Matrix{Complex{T}}; ℓmax=(size(alm,1)-1)) where {T}
     InterpolatedCℓs(0:ℓmax, real.([(dot(alm1[ℓ+1,1], alm2[ℓ+1,1]) + 2dot(alm1[ℓ+1,2:ℓ+1], alm2[ℓ+1,2:ℓ+1]))/(2ℓ+1) for ℓ=0:ℓmax]))
 end
 
-get_Cℓ(mp::HealpixS0Cap{Nside}; ℓmax=2Nside) where {Nside} = alm2cl(map2alm(mp, ℓmax=ℓmax))
+get_Cℓ(mp::HealpixCap{Nside}; ℓmax=2Nside) where {Nside} = alm2cl(map2alm(mp, ℓmax=ℓmax))
 get_Cℓ(mp1::HealpixS0Cap{Nside}, mp2::HealpixS0Cap{Nside}; ℓmax=2Nside) where {Nside} = alm2cl(map2alm(mp1, ℓmax=ℓmax), map2alm(mp2, ℓmax=ℓmax), ℓmax=ℓmax)

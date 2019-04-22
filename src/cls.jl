@@ -220,7 +220,8 @@ end
 * `μKarcminT`: temperature noise in μK-arcmin
 * `beamFWHM`: beam-FWHM in arcmin
 """
-function noisecls(μKarcminT;beamFWHM=0,ℓmax=8000,ℓknee=100,αknee=3)
+noisecls(μKarcminT; kwargs...) = noisecls(;μKarcminT=μKarcminT, kwargs...)
+function noisecls(;μKarcminT, beamFWHM=0, ℓmax=8000, ℓknee=100, αknee=3)
     ℓ = 2:ℓmax
     Bℓ = @. exp(ℓ^2*deg2rad(beamFWHM/60)^2/(8*log(2)))
     Nℓ1f = @. 1 + (ℓknee/ℓ)^αknee
