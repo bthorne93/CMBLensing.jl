@@ -112,8 +112,10 @@ end
 
 getproperty(f::HealpixS2Cap, ::Val{:Qx}) = f.QUx[:,1]
 getproperty(f::HealpixS2Cap, ::Val{:Ux}) = f.QUx[:,2]
-getproperty(f::HealpixS2Cap, ::Val{:E}) = alm2map!(HealpixS0Cap(similar(@view(f.QUx[:,1])), f.gradient_cache),map2alm(f)[1:1,:,:])
-getproperty(f::HealpixS2Cap, ::Val{:B}) = alm2map!(HealpixS0Cap(similar(@view(f.QUx[:,2])), f.gradient_cache),map2alm(f)[2:2,:,:])
+getproperty(f::HealpixS2Cap{Nside,T,Nobs,GC}, ::Val{:E}) where {Nside,T,Nobs,GC} = 
+    alm2map!(HealpixS0Cap{Nside,T,Nobs,GC}(similar(@view(f.QUx[:,1])), f.gradient_cache),map2alm(f)[1:1,:,:])
+getproperty(f::HealpixS2Cap{Nside,T,Nobs,GC}, ::Val{:B}) where {Nside,T,Nobs,GC} = 
+    alm2map!(HealpixS0Cap{Nside,T,Nobs,GC}(similar(@view(f.QUx[:,2])), f.gradient_cache),map2alm(f)[2:2,:,:])
 
 
 function isfullsky(f::HealpixCap{Nside,T,Nobs}) where {Nside,T,Nobs}
@@ -269,11 +271,12 @@ end
 
 ## Harmonic Operators
  
-struct IsotropicHarmonicCov{Nside, T, Nobs, N, GC<:GradientCache{Nside, T, Nobs}} <: LinOp{Basis, Spin, HpxPix}
+struct IsotropicHarmonicCov{Nside, T, Nobs, N, GC<:Union{GradientCache{Nside, T, Nobs},Nothing}} <: LinOp{Basis, Spin, HpxPix}
     Cℓ :: Array{T,N}
     gc :: GC
 end
 IsotropicHarmonicCov(Cℓ::Array,  gc::GradientCache{Nside,T}) where {Nside,T} = IsotropicHarmonicCov(T.(Cℓ), gc)
+IsotropicHarmonicCov(Cℓ::Array{T,N}, Nside::Int) where {T,N} = IsotropicHarmonicCov{Nside,T,12Nside^2,N,Nothing}(Cℓ, nothing)
 
 *(L::BandPassOp, f::HealpixCap{Nside, T}) where {Nside, T} = IsotropicHarmonicCov(T.(L.Wℓ), f.gradient_cache) * f
 function mul!(f′::F, L::IsotropicHarmonicCov{Nside, T, Nobs}, f::F) where {Nside, T, Nobs, F<:HealpixCap{Nside, T, Nobs}}
@@ -313,16 +316,16 @@ end
 
 
 # todo: implement proper broadcasting
-+(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = IsotropicHarmonicCov(Σa.Cℓ.+Σb.Cℓ, Σa.gc)
-*(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = IsotropicHarmonicCov(Σa.Cℓ.*Σb.Cℓ, Σa.gc)
-*(Σ::IsotropicHarmonicCov, α::Real) = IsotropicHarmonicCov(α*Σ.Cℓ, Σ.gc)
-*(α::Real, Σ::IsotropicHarmonicCov) = IsotropicHarmonicCov(α*Σ.Cℓ, Σ.gc)
-inv(Σ::IsotropicHarmonicCov) = IsotropicHarmonicCov(nan2zero.(inv.(Σ.Cℓ)), Σ.gc)
-sqrt(Σ::IsotropicHarmonicCov) = IsotropicHarmonicCov(sqrt.(Σ.Cℓ), Σ.gc)
-simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1}; fullsky=true, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs} = 
-    sqrt(Σ) * HealpixS0Cap(randn(T,Nsim)/T(hp.nside2resol(Nside)), Σ.gc)
-simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2}; fullsky=true, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs} = 
-    sqrt(Σ) * HealpixS2Cap(randn(T,Nsim,2)/T(hp.nside2resol(Nside)), Σ.gc)
++(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = I(Σa.Cℓ.+Σb.Cℓ, Σa.gc)
+*(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = I(Σa.Cℓ.*Σb.Cℓ, Σa.gc)
+*(Σ::I, α::Real) where {I<:IsotropicHarmonicCov} = I(α*Σ.Cℓ, Σ.gc)
+*(α::Real, Σ::I) where {I<:IsotropicHarmonicCov} = I(α*Σ.Cℓ, Σ.gc)
+inv(Σ::I) where {I<:IsotropicHarmonicCov} = I(nan2zero.(inv.(Σ.Cℓ)), Σ.gc)
+sqrt(Σ::I) where {I<:IsotropicHarmonicCov} = I(sqrt.(Σ.Cℓ), Σ.gc)
+simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1,GC}; fullsky=false, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs,GC} = 
+    sqrt(Σ) * HealpixS0Cap{Nside,T,Nobs,GC}(randn(T,Nsim)/T(hp.nside2resol(Nside)), Σ.gc)
+simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2,GC}; fullsky=false, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs,GC} = 
+    sqrt(Σ) * HealpixS2Cap{Nside,T,Nobs,GC}(randn(T,Nsim,2)/T(hp.nside2resol(Nside)), Σ.gc)
 zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs}) where {Nside,T,Nobs} = 
     HealpixS0Cap(zeros(T,Nobs), Σ.gc)
 
@@ -332,7 +335,7 @@ function HealpixCapMask(θmax, Δθapod, Nside)
     W(θ) = θ<θmax ? 1 : θmax<θ<(θmax+Δθapod) ? (cos(π*(θ-θmax)/Δθapod)+1)/2 : 0
     i,l = hp.ringinfo(Nside, collect(1:4Nside))[1:2]
     m = zeros(12*Nside^2)
-    for (r,w) in zip(broadcast(:, i, i .+ l .- 1), W.(rad2deg.(acos.(hp.ringinfo(Nside, collect(1:4nside))[3]))))
+    for (r,w) in zip(broadcast(:, i, i .+ l .- 1), W.(rad2deg.(acos.(hp.ringinfo(Nside, collect(1:4Nside))[3]))))
         m[r.+1] .= w
     end
     m
@@ -376,7 +379,7 @@ end
         aℓms = Array{Complex{T}}(undef, ($N,ℓmax+1,mmax+1))
         aℓms .= NaN
         ccall(
-            ($fn_name, "/home/marius/lib/libhealpix.so"), Nothing,
+            ($fn_name, "libhealpix.so"), Nothing,
             (Ref{Int32}, Ref{Int32}, Ref{Int32}, $(Tspin...), Ref{T}, Ref{Complex{T}}, Ref{Float64}, Ref{Nothing}),
             Nside, ℓmax, mmax, $(spin...), maps, aℓms, Float64.(zbounds), C_NULL
         )
@@ -405,7 +408,7 @@ end
         end
         
         ccall(
-           ($fn_name, "/home/marius/lib/libhealpix.so") , Nothing,
+           ($fn_name, "libhealpix.so") , Nothing,
            (Ref{Int32}, Ref{Int32}, Ref{Int32}, $(Tspin...), Ref{Complex{T}}, Ref{T}, Ref{Float64}, Ref{Nothing}),
            Nside, ℓmax, mmax, $(spin...), aℓms, fullmaps, Float64.(zbounds), C_NULL
         )
