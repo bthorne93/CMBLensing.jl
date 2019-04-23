@@ -225,8 +225,8 @@ function plot(f::HealpixS0Cap, args...; cmap="RdBu_r", vlim=nothing, plot_type=(
 end
 
 function plot(f::HealpixS2Cap, args...; kwargs...)
-    plot(HealpixS0Cap(f.QUx[:,1], f.gradient_cache), args...; kwargs...)
-    plot(HealpixS0Cap(f.QUx[:,2], f.gradient_cache), args...; kwargs...)
+    plot(HealpixS0Cap(f.QUx[:,1]), args...; kwargs...)
+    plot(HealpixS0Cap(f.QUx[:,2]), args...; kwargs...)
 end
     
     
