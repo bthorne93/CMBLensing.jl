@@ -275,8 +275,10 @@ struct IsotropicHarmonicCov{Nside, T, Nobs, N, GC<:Union{GradientCache{Nside, T,
     Cℓ :: Array{T,N}
     gc :: GC
 end
-IsotropicHarmonicCov(Cℓ::Array,  gc::GradientCache{Nside,T}) where {Nside,T} = IsotropicHarmonicCov(T.(Cℓ), gc)
-IsotropicHarmonicCov(Cℓ::Array{T,N}, Nside::Int) where {T,N} = IsotropicHarmonicCov{Nside,T,12Nside^2,N,Nothing}(Cℓ, nothing)
+IsotropicHarmonicCov(Cℓ::Array{T,N}, gc::GC) where {T,N,Nside,T′,Nobs,GC<:GradientCache{Nside,T′,Nobs}} = 
+    IsotropicHarmonicCov{Nside,T′,Nobs,N,GC}(Cℓ, gc)
+IsotropicHarmonicCov(Cℓ::Array{T,N}, Nside::Int) where {T,N} = 
+    IsotropicHarmonicCov{Nside,T,12Nside^2,N,Nothing}(Cℓ, nothing)
 
 *(L::BandPassOp, f::HealpixCap{Nside, T}) where {Nside, T} = IsotropicHarmonicCov(T.(L.Wℓ), f.gradient_cache) * f
 function mul!(f′::F, L::IsotropicHarmonicCov{Nside, T, Nobs}, f::F) where {Nside, T, Nobs, F<:HealpixCap{Nside, T, Nobs}}
