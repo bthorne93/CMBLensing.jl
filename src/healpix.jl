@@ -112,6 +112,10 @@ end
 
 getproperty(f::HealpixS2Cap, ::Val{:Qx}) = f.QUx[:,1]
 getproperty(f::HealpixS2Cap, ::Val{:Ux}) = f.QUx[:,2]
+getproperty(f::HealpixS2Cap{Nside,T,Nobs,GC}, ::Val{:Q}) where {Nside,T,Nobs,GC} = 
+    HealpixS0Cap{Nside,T,Nobs,GC}(f.QUx[:,1], f.gradient_cache)
+getproperty(f::HealpixS2Cap{Nside,T,Nobs,GC}, ::Val{:U}) where {Nside,T,Nobs,GC} = 
+    HealpixS0Cap{Nside,T,Nobs,GC}(f.QUx[:,2], f.gradient_cache)
 getproperty(f::HealpixS2Cap{Nside,T,Nobs,GC}, ::Val{:E}) where {Nside,T,Nobs,GC} = 
     alm2map!(HealpixS0Cap{Nside,T,Nobs,GC}(similar(@view(f.QUx[:,1])), f.gradient_cache),map2alm(f)[1:1,:,:])
 getproperty(f::HealpixS2Cap{Nside,T,Nobs,GC}, ::Val{:B}) where {Nside,T,Nobs,GC} = 
@@ -184,15 +188,25 @@ end
 
 
 
-*(∇Op::Adjoint{∇i,<:∇Op}, v::FieldVector{<:HealpixS0Cap}) = mul!(similar(v[1]), ∇Op, v)
+*(∇Op::Adjoint{∇i,<:∇Op}, v::FieldVector{<:HealpixCap}) = mul!(similar(v[1]), ∇Op, v)
 function mul!(f′::F, ∇Op::Adjoint{∇i,<:∇Op}, v::FieldVector{F}, memf′::F=v[1]) where {Nside,T,Nobs,F<:HealpixS0Cap{Nside,T,Nobs}}
     gc = f′.gradient_cache
     W = get_W(∇Op, gc)
     for i in eachindex(gc.neighbors)
-        f′.Ix[i] = -(  (W[i] * @view v[1].Ix[gc.neighbors[i]])[1] 
-                     + (W[i] * @view v[2].Ix[gc.neighbors[i]])[2])
+        f′.Ix[i] = -(  (W[i][1,:]' * @view v[1].Ix[gc.neighbors[i]])
+                     + (W[i][2,:]' * @view v[2].Ix[gc.neighbors[i]]))
     end
     f′.Ix[Nobs+1:end] .= 0
+    f′
+end
+function mul!(f′::F, ∇Op::Adjoint{∇i,<:∇Op}, v::FieldVector{F}, memf′::F=v[1]) where {Nside,T,Nobs,F<:HealpixS2Cap{Nside,T,Nobs}}
+    gc = f′.gradient_cache
+    W = get_W(∇Op, gc)
+    for i in eachindex(gc.neighbors)
+        f′.QUx[i,:] = -(  (W[i][1,:]' * @view(v[1].QUx[gc.neighbors[i],:])) 
+                        + (W[i][2,:]' * @view(v[2].QUx[gc.neighbors[i],:])))'
+    end
+    f′.QUx[Nobs+1:end,:] .= 0
     f′
 end
 
@@ -209,6 +223,16 @@ function mul!(f′::F, ∇Op::AdjOp{<:∇i{component}}, f::F) where {component,N
     f′
 end
 
+function mul!(vf0::FieldVector{<:HealpixS0Cap}, f::AdjField{<:Any,<:Any,<:Any,H}, vf2::FieldVector{H}) where {H<:HealpixS2Cap}
+    for i=1:2
+        for j=1:length(vf0[i].Ix)
+            vf0[i].Ix[j] = f.f.QUx[j,:]' * vf2[i].QUx[j,:]
+        end
+    end
+    vf0
+end
+
+
 
 
 dot(a::H, b::H) where {Nside, H<:HealpixS0Cap{Nside}} = dot(nan2zero.(a.Ix), nan2zero.(b.Ix))  * hp.nside2pixarea(Nside)
@@ -224,11 +248,10 @@ function plot(f::HealpixS0Cap, args...; cmap="RdBu_r", vlim=nothing, plot_type=(
     getproperty(hp,plot_type)(full(f), args...; cmap=cmap, kwargs...)
 end
 
-function plot(f::HealpixS2Cap, args...; kwargs...)
-    plot(HealpixS0Cap(f.QUx[:,1]), args...; kwargs...)
-    plot(HealpixS0Cap(f.QUx[:,2]), args...; kwargs...)
+function plot(f::HealpixS2Cap{Nside}, args...; kwargs...) where {Nside}
+    plot(HealpixS0Cap(f.QUx[:,1],Nside), args...; kwargs...)
+    plot(HealpixS0Cap(f.QUx[:,2],Nside), args...; kwargs...)
 end
-    
     
     
 ## conversion to flat sky maps
@@ -275,12 +298,12 @@ struct IsotropicHarmonicCov{Nside, T, Nobs, N, GC<:Union{GradientCache{Nside, T,
     Cℓ :: Array{T,N}
     gc :: GC
 end
-IsotropicHarmonicCov(Cℓ::Array{T,N}, gc::GC) where {T,N,Nside,T′,Nobs,GC<:GradientCache{Nside,T′,Nobs}} = 
+IsotropicHarmonicCov(Cℓ::Array{T,N}, gc::GC) where {T,N,Nside,T′,Nobs,GC<:Union{GradientCache{Nside,T′,Nobs},Nothing}} = 
     IsotropicHarmonicCov{Nside,T′,Nobs,N,GC}(Cℓ, gc)
 IsotropicHarmonicCov(Cℓ::Array{T,N}, Nside::Int) where {T,N} = 
     IsotropicHarmonicCov{Nside,T,12Nside^2,N,Nothing}(Cℓ, nothing)
 
-*(L::BandPassOp, f::HealpixCap{Nside, T}) where {Nside, T} = IsotropicHarmonicCov(T.(L.Wℓ), f.gradient_cache) * f
+*(L::BandPassOp, f::HealpixCap{Nside, T}) where {Nside, T} = IsotropicHarmonicCov(L.Wℓ, f.gradient_cache) * f
 function mul!(f′::F, L::IsotropicHarmonicCov{Nside, T, Nobs}, f::F) where {Nside, T, Nobs, F<:HealpixCap{Nside, T, Nobs}}
     ℓmax = min(size(L.Cℓ,1)-1, 3Nside)
     aℓms = map2alm(f, ℓmax=ℓmax)
@@ -328,8 +351,10 @@ simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1,GC}; fullsky=false, Nsim=(fulls
     sqrt(Σ) * HealpixS0Cap{Nside,T,Nobs,GC}(randn(T,Nsim)/T(hp.nside2resol(Nside)), Σ.gc)
 simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2,GC}; fullsky=false, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs,GC} = 
     sqrt(Σ) * HealpixS2Cap{Nside,T,Nobs,GC}(randn(T,Nsim,2)/T(hp.nside2resol(Nside)), Σ.gc)
-zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs}) where {Nside,T,Nobs} = 
+zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1}) where {Nside,T,Nobs} = 
     HealpixS0Cap(zeros(T,Nobs), Σ.gc)
+zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2}) where {Nside,T,Nobs} = 
+    HealpixS2Cap(zeros(T,Nobs,2), Σ.gc)
 
 
 ##

@@ -629,10 +629,10 @@ function load_healpix_sim_dataset(;
     Cℓf, Cℓf̃ = Cℓ[:f], Cℓ[:f̃]
 
     ks = (use==:T) ? [:TT] : [:EE, :BB]
-    Cf = IsotropicHarmonicCov(hcat([nan2zero.(Cℓf[k][0:ℓmax_ops]) for k in ks]...), gradient_cache)
-    Cf̃ = IsotropicHarmonicCov(hcat([nan2zero.(Cℓf̃[k][0:ℓmax_ops]) for k in ks]...), gradient_cache)
-    Cn = IsotropicHarmonicCov(hcat([nan2zero.(Cℓn[k][0:ℓmax_ops]) for k in ks]...), gradient_cache)
-    Cϕ = IsotropicHarmonicCov(      nan2zero.(Cℓf[:ϕϕ][0:ℓmax_ops]),                gradient_cache)
+    Cf = IsotropicHarmonicCov(hcat([nan2zero.(Cℓf[k][1:ℓmax_ops]) for k in ks]...), gradient_cache)
+    Cf̃ = IsotropicHarmonicCov(hcat([nan2zero.(Cℓf̃[k][1:ℓmax_ops]) for k in ks]...), gradient_cache)
+    Cn = IsotropicHarmonicCov(hcat([nan2zero.(Cℓn[k][1:ℓmax_ops]) for k in ks]...), gradient_cache)
+    Cϕ = IsotropicHarmonicCov(      nan2zero.(Cℓf[:ϕϕ][1:ℓmax_ops]),                gradient_cache)
     
     P=B=1 #for now
     
