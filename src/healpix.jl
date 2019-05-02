@@ -380,7 +380,7 @@ function alm2cl(alm::Matrix{Complex{T}}; ℓmax=(size(alm,1)-1)) where {T}
 end
 
 function alm2cl(alm::Array{Complex{T},3}; ℓmax=(size(alm,2)-1)) where {T}
-    map(1:2) do i
+    map(1:size(alm,1)) do i
         InterpolatedCℓs(0:ℓmax, [(abs2(alm[i,ℓ+1,1]) + 2sum(abs2.(alm[i,ℓ+1,2:ℓ+1])))/(2ℓ+1) for ℓ=0:ℓmax])
     end
 end
