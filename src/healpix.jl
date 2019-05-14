@@ -267,8 +267,19 @@ function azeqproj(f::HealpixS0Cap{<:Any,T}, θpix, Nside, lamb=false) where {T}
         wasinteractive && pylab.ion()
     end
 end
-function azeqproj(f::HealpixS2Cap, θpix, Nside)
-    FlatS2QUMap((azeqproj(HealpixS0Cap(getproperty(f,k), f.gradient_cache), θpix, Nside) for k in (:Qx,:Ux))...)
+function azeqproj(f::HealpixS2Cap{<:Any,T}, θpix, Nside, lamb=false) where {T}
+    pylab = pyimport("matplotlib.pylab")
+    wasinteractive = pylab.isinteractive()
+    rotator = hp.Rotator((0,90,0),eulertype="ZYX")
+    QUx = rotator.rotate_map_pixel(tofullsky(f).QUx') # for S2 we have to rotate the polarization angles, and this function does it
+    try
+        pylab.ioff()
+        Qx,Ux = hp.azeqview.(QUx, reso=θpix, xsize=Nside, lamb=lamb, return_projected_map=true)
+        close(); close()
+        FlatS2QUMap{T,Flat{θpix,Nside,fourier∂}}(Qx,-Ux) # healpix QU convention is backwards
+    finally
+        wasinteractive && pylab.ion()
+    end
 end
 azeqproj(f::HealpixCap{Nside,T,Nobs}) where {Nside,T,Nobs} = azeqproj(f, round(600rad2deg(hp.nside2resol(Nside)))/10, Nside)
 

@@ -43,6 +43,7 @@ for (F,T) in [(:FlatS2EBMap,:T),(:FlatS2QUMap,:T),(:FlatS2EBFourier,:(Complex{T}
     @eval ($F)(a::Matrix{$T},b::Matrix{$T},θpix=θpix₀,∂mode=fourier∂) where {T} = ($F){T,Flat{θpix,size(a,2),∂mode}}(a,b)
 end
 FlatS2QUMap(Q::FlatS0Map{T,P},U::FlatS0Map{T,P}) where {T,P} = FlatS2QUMap{T,P}(Q.Tx, U.Tx)
+FlatS2EBMap(E::FlatS0Map{T,P},B::FlatS0Map{T,P}) where {T,P} = FlatS2EBMap{T,P}(E.Tx, B.Tx)
 
 
 LenseBasis(::Type{<:FlatS2}) = QUMap
