@@ -386,19 +386,11 @@ end
 include("healpix_generated.jl")
 
 
-function alm2cl(alm::Matrix{Complex{T}}; ℓmax=(size(alm,1)-1)) where {T}
-    InterpolatedCℓs(0:ℓmax, [(abs2(alm[ℓ+1,1]) + 2sum(abs2.(alm[ℓ+1, 2:ℓ+1])))/(2ℓ+1) for ℓ=0:ℓmax])
-end
-
-function alm2cl(alm::Array{Complex{T},3}; ℓmax=(size(alm,2)-1)) where {T}
-    map(1:size(alm,1)) do i
-        InterpolatedCℓs(0:ℓmax, [(abs2(alm[i,ℓ+1,1]) + 2sum(abs2.(alm[i,ℓ+1,2:ℓ+1])))/(2ℓ+1) for ℓ=0:ℓmax])
+function alm2cl(alm1::Array{Complex{T},3}, alm2::Array{Complex{T},3}=alm1; ℓmax=(size(alm1,2)-1)) where {T}
+    cls = map(1:size(alm1,1)) do i
+        InterpolatedCℓs(0:ℓmax, real.([(dot(alm1[i,ℓ+1,1], alm2[i,ℓ+1,1]) + 2dot(alm1[i,ℓ+1,2:ℓ+1], alm2[i,ℓ+1,2:ℓ+1]))/(2ℓ+1) for ℓ=0:ℓmax]))
     end
+    length(cls)==1 ? cls[1] : cls
 end
-
-function alm2cl(alm1::Matrix{Complex{T}}, alm2::Matrix{Complex{T}}; ℓmax=(size(alm,1)-1)) where {T}
-    InterpolatedCℓs(0:ℓmax, real.([(dot(alm1[ℓ+1,1], alm2[ℓ+1,1]) + 2dot(alm1[ℓ+1,2:ℓ+1], alm2[ℓ+1,2:ℓ+1]))/(2ℓ+1) for ℓ=0:ℓmax]))
-end
-
 get_Cℓ(mp::HealpixCap{Nside}; ℓmax=2Nside) where {Nside} = alm2cl(map2alm(mp, ℓmax=ℓmax))
 get_Cℓ(mp1::HealpixS0Cap{Nside}, mp2::HealpixS0Cap{Nside}; ℓmax=2Nside) where {Nside} = alm2cl(map2alm(mp1, ℓmax=ℓmax), map2alm(mp2, ℓmax=ℓmax), ℓmax=ℓmax)
