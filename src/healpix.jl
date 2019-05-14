@@ -297,11 +297,12 @@ end
 struct IsotropicHarmonicCov{Nside, T, Nobs, N, GC<:Union{GradientCache{Nside, T, Nobs},Nothing}} <: LinOp{Basis, Spin, HpxPix}
     Cℓ :: Array{T,N}
     gc :: GC
+    fullsky :: Bool
 end
-IsotropicHarmonicCov(Cℓ::Array{T,N}, gc::GC) where {T,N,Nside,T′,Nobs,GC<:Union{GradientCache{Nside,T′,Nobs},Nothing}} = 
-    IsotropicHarmonicCov{Nside,T′,Nobs,N,GC}(Cℓ, gc)
-IsotropicHarmonicCov(Cℓ::Array{T,N}, Nside::Int) where {T,N} = 
-    IsotropicHarmonicCov{Nside,T,12Nside^2,N,Nothing}(Cℓ, nothing)
+IsotropicHarmonicCov(Cℓ::Array{T,N}, gc::GC, fullsky=false) where {T,N,Nside,T′,Nobs,GC<:Union{GradientCache{Nside,T′,Nobs},Nothing}} = 
+    IsotropicHarmonicCov{Nside,T′,Nobs,N,GC}(Cℓ, gc, fullsky)
+IsotropicHarmonicCov(Cℓ::Array{T,N}, Nside::Int, fullsky=false) where {T,N} = 
+    IsotropicHarmonicCov{Nside,T,12Nside^2,N,Nothing}(Cℓ, nothing, fullsky)
 
 *(L::BandPassOp, f::HealpixCap{Nside, T}) where {Nside, T} = IsotropicHarmonicCov(L.Wℓ, f.gradient_cache) * f
 function mul!(f′::F, L::IsotropicHarmonicCov{Nside, T, Nobs}, f::F) where {Nside, T, Nobs, F<:HealpixCap{Nside, T, Nobs}}
@@ -341,20 +342,20 @@ end
 
 
 # todo: implement proper broadcasting
-+(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = I(Σa.Cℓ.+Σb.Cℓ, Σa.gc)
-*(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = I(Σa.Cℓ.*Σb.Cℓ, Σa.gc)
-*(Σ::I, α::Real) where {I<:IsotropicHarmonicCov} = I(α*Σ.Cℓ, Σ.gc)
-*(α::Real, Σ::I) where {I<:IsotropicHarmonicCov} = I(α*Σ.Cℓ, Σ.gc)
-inv(Σ::I) where {I<:IsotropicHarmonicCov} = I(nan2zero.(inv.(Σ.Cℓ)), Σ.gc)
-sqrt(Σ::I) where {I<:IsotropicHarmonicCov} = I(sqrt.(Σ.Cℓ), Σ.gc)
-simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1,GC}; fullsky=false, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs,GC} = 
++(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = I(Σa.Cℓ.+Σb.Cℓ, Σa.gc, Σa.fullsky & Σ.b.fullsky)
+*(Σa::I, Σb::I) where {I<:IsotropicHarmonicCov} = I(Σa.Cℓ.*Σb.Cℓ, Σa.gc, Σa.fullsky & Σ.b.fullsky)
+*(Σ::I, α::Real) where {I<:IsotropicHarmonicCov} = I(α*Σ.Cℓ, Σ.gc, Σ.fullsky)
+*(α::Real, Σ::I) where {I<:IsotropicHarmonicCov} = I(α*Σ.Cℓ, Σ.gc, Σ.fullsky)
+inv(Σ::I) where {I<:IsotropicHarmonicCov} = I(nan2zero.(inv.(Σ.Cℓ)), Σ.gc, Σ.fullsky)
+sqrt(Σ::I) where {I<:IsotropicHarmonicCov} = I(sqrt.(Σ.Cℓ), Σ.gc, Σ.fullsky)
+simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1,GC}; fullsky=Σ.fullsky, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs,GC} = 
     sqrt(Σ) * HealpixS0Cap{Nside,T,Nobs,GC}(randn(T,Nsim)/T(hp.nside2resol(Nside)), Σ.gc)
-simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2,GC}; fullsky=false, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs,GC} = 
+simulate(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2,GC}; fullsky=Σ.fullsky, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs,GC} = 
     sqrt(Σ) * HealpixS2Cap{Nside,T,Nobs,GC}(randn(T,Nsim,2)/T(hp.nside2resol(Nside)), Σ.gc)
-zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1}) where {Nside,T,Nobs} = 
-    HealpixS0Cap(zeros(T,Nobs), Σ.gc)
-zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2}) where {Nside,T,Nobs} = 
-    HealpixS2Cap(zeros(T,Nobs,2), Σ.gc)
+zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs,1}; fullsky=Σ.fullsky, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs} = 
+    HealpixS0Cap(zeros(T,Nsim), Σ.gc)
+zero(Σ::IsotropicHarmonicCov{Nside,T,Nobs,2}; fullsky=Σ.fullsky, Nsim=(fullsky ? 12Nside^2 : Nobs)) where {Nside,T,Nobs} = 
+    HealpixS2Cap(zeros(T,Nsim,2), Σ.gc)
 
 
 ##
