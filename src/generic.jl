@@ -74,6 +74,16 @@ adjoint(f::AdjField) = f.f
 *(a::Field{<:Any,S0}, b::AdjField{<:Any,<:S0}) = a * b.f
 
 
+### ZeroField
+
+struct ZeroField <: Field{Basis,Spin,Pix} end
+BroadcastStyle(::Style{F}, ::Style{<:ZeroField})  where {F<:Field} = Style{F}()
+broadcast_data(::Type{F}, ::ZeroField) where {F<:Field} = (0,)
+promote(f::Field, z::ZeroField) = (f,z)
+promote(z::ZeroField, f::Field) = (z,f)
+∅ = ZeroField()
+
+
 
 ### LinOp
 

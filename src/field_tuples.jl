@@ -15,6 +15,7 @@ function FieldTuple(fs::Field...)
     P = PixTuple{Tuple{map(pix,fs)...}}
     FieldTuple{typeof(fs),B,S,P}(fs)
 end
+FieldTuple(fs::Tuple) = FieldTuple(fs...) # used in broadcasting when we've fallen back to Style{FieldTuple}
 
 shortname(::Type{<:FieldTuple{FS}}) where {FS} = "FieldTuple{$(join(map(shortname,FS.parameters),","))}"
 
@@ -22,10 +23,8 @@ shortname(::Type{<:FieldTuple{FS}}) where {FS} = "FieldTuple{$(join(map(shortnam
 broadcast_data(::Type{FT}, ft::FT) where {FS,FT<:FieldTuple{FS}} = ft.fs
 broadcast_data(::Type{FT}, f::Union{Field,LinOp}) where {FS,FT<:FieldTuple{FS}} = (f,)
 broadcast_data(::Type{FT}, L::FullDiagOp{FT}) where {FS,FT<:FieldTuple{FS}} = L.f.fs
-promote_containertype(::Type{FT}, ::Type{F}) where {FT<:FieldTuple,F<:Field} = FT
-promote_containertype(::Type{F}, ::Type{FT}) where {FT<:FieldTuple,F<:Field} = FT
-promote_containertype(::Type{FT}, ::Type{FT}) where {FT<:FieldTuple} = FT # needed for ambiguity
 BroadcastStyle(::Style{F0}, ::Style{FT}) where {F0<:Field{Map,S0},FT<:FieldTuple} = Style{FT}()
+BroadcastStyle(::Style{<:FieldTuple}, ::Style{<:FieldTuple}) = Style{FieldTuple}() # its ok to drop keeping track of the exact concrete FieldTuple in the style
 
 # promotion / conversion
 function promote(a::F1, b::F2) where {F1<:FieldTuple, F2<:FieldTuple}
