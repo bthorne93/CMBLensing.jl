@@ -109,7 +109,6 @@ WORKDIR $HOME/CMBLensing/docs/src
 ARG RUNDOCS=1
 RUN jupytext --to notebook *.md \
     && rm *.md \
-    && find . -not -name "*gpu*" -name "*.ipynb" \
     && test $RUNDOCS = 0 || for f in $(find . -not -name "*gpu*" -name "*.ipynb"); do \
         jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 $f || ! break; \
     done
